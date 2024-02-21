@@ -1,0 +1,164 @@
+///////////////////_funkcije.php
+<?php
+    function konekcija(){
+        mysqli_report(MYSQLI_REPORT_OFF);
+        $db=@mysqli_connect("localhost", "root", "", "pva_k2_g2");
+        if(!$db) return false;
+        mysqli_query($db, "SET NAMES utf8");
+        return $db;
+    }
+?>
+//////////index.php
+<body>
+        <input type="text" id="email" placeholder="Unesite email"> <br><br>
+        <input type="password" id="lozinka" placeholder="Unesite lozinku"> <br><br>
+        <button class="btn btn-primary mb-3" id="dugme">Prijava</button>
+        <div id="odgovor"></div>
+</body>
+<script>
+    $(function(){
+        $("#dugme").click(function(){
+            let email=$("#email").val();
+            let lozinka=$("#lozinka").val();
+            $.post("ajax/ajax_index.php?akcija=prijava", {email:email, lozinka:lozinka}, function(response){
+                if(response=="OK") window.location.assign("dodajKnjigu.php");
+                else $("#odgovor").html("<div class='alert alert-danger'>"+response+"</div>");
+            })
+        })
+    })
+    
+</script>
+////////ajax_index.php
+<?php
+    session_start();
+    require_once("../_funkcije.php");
+    require_once("../klase/classLog.php");
+    if(!$db=konekcija()){
+        echo "Neuspela konekcija na bazu!!!!";
+        exit();
+    }
+    $akcija=$_GET['akcija'];
+    if($akcija=="prijava"){
+        $email=$_POST['email'];
+        $lozinka=$_POST['lozinka'];
+        if($email!="" AND $lozinka!=""){
+            $sql="SELECT * FROM korisnici WHERE email='{$email}' and lozinka='{$lozinka}'";
+            $rez=mysqli_query($db, $sql);
+            if(mysqli_num_rows($rez)==1){
+                $red=mysqli_fetch_assoc($rez);
+                $_SESSION['podaci']=$red['ime']." ".$red['prezime']." (".$red['status'].")";
+                $_SESSION['id']=$red['id'];
+                $_SESSION['email']=$red['email'];
+                $_SESSION['status']=$red['status'];
+                Log::upis("Prijava korisnika '{$email}'");
+                echo "OK";
+            }else echo "Ne postoji korisnik sa tim podacima!!!!";
+        }else echo "Svi podaci su obavezni!!!!";
+    } 
+?>
+//////////////classLog.php
+<?php
+    class Log{
+        public static function upis($tekst){
+            $datum=date("Y-m-d");
+            $file="../logovi/".$datum."_log.txt";
+            $file=fopen($file, "a");
+            fwrite($file, date("H:i:s")." - ".$tekst."\n");
+            fclose($file);
+        }
+    }
+?>
+/////////////dodajKnjigu.php
+<body>
+    <div class="container">
+        <div class="alert alert-info mt-3">
+        Korisnik: <?= $_SESSION['podaci']?><br><a href='dodajKnjigu.php'>Sve knjige</a> | <a href="logout.php">Odjava</a> <?php echo ($_SESSION['status']=="Administrator")?" | <a href='admin.php'>Administracija</a>":""?>
+        </div>
+        <div class="alert alert-success">
+            <input type="text" id="naslov" placeholder="Unesite naslov" style='width:70%'> <br><br>
+            <input type="text" id="autor" placeholder="Unesite autora" style='width:70%'> <br><br>
+            <input type="number" id="broj"  style='width:70%' value="0"> <br><br>
+            <button id="dugme" class="btn btn-primary btn-sm" onclick="dodajKnjigu()">Snimi knjigu</button>
+        </div>
+        <h3>Knjige</h3>
+        <input type="text" id="termin" placeholder="Unesite termin pretrage"> 
+        <button class="btn btn-primary btn-sm mb-1" id="dugme2" onclick="prikaziKnjige()">Pretraži</button>
+        <div id="knjige"></div>
+    </div>
+</body>
+<script>
+    $(function(){
+        prikaziKnjige();
+    })
+    function prikaziKnjige(){
+        let termin=$("#termin").val();
+        $.get("ajax/ajax_dodajKnjigu.php?akcija=prikaziKnjige", {termin:termin},function(response){
+            $("#knjige").html(response);
+        })
+    }
+    function obrisi(idKnjige){
+        if(!confirm("Da li ste sigurni?")) return false;
+        $.post("ajax/ajax_dodajKnjigu.php?akcija=obrisi",{id:idKnjige}, function(response){
+            alert(response);
+            prikaziKnjige();
+        })
+    }
+    function dodajKnjigu(){
+        let naslov=$("#naslov").val();
+        let autor=$("#autor").val();
+        let broj=$("#broj").val();
+        if(naslov=="" || autor=="" || broj==""){
+            alert("Svi podaci su obavezni!!!!");
+            return false;
+        }
+        $.post("ajax/ajax_dodajKnjigu.php?akcija=dodajKnjigu",{naslov:naslov, autor:autor, broj:broj}, function(response){
+            alert(response);
+            prikaziKnjige();
+        })
+    }
+</script>
+/////////////ajax_dodajKnjigu.php
+<?php
+    session_start();
+    require_once("../_funkcije.php");
+    require_once("../klase/classLog.php");
+    if(!$db=konekcija()){
+        echo "Neuspela konekcija na bazu!!!!";
+        exit();
+    }
+    $akcija=$_GET['akcija'];
+    if($akcija=="prikaziKnjige"){
+        $termin=$_GET['termin'];
+        if($termin=="")$sql="SELECT * FROM veza_knjige_korisnici ORDER BY id DESC";
+        else $sql="SELECT * FROM veza_knjige_korisnici WHERE naslov LIKE('%{$termin}%') OR autor LIKE('%{$termin}%') ORDER BY id DESC";
+        //echo $sql;
+        $rez=mysqli_query($db, $sql);
+        while($red=mysqli_fetch_assoc($rez)){
+            echo "<div class='alert alert-secondary'><i>{$red['vremeK']}</i><br><b>{$red['naslov']}</b> ({$red['autor']})<br><i>{$red['ime']} {$red['prezime']}</i>";
+            if($red['idKorisnika']==$_SESSION['id'])echo "<br><button class='btn btn-danger btn-sm' onclick='obrisi({$red['id']})'>Obriši</button>";
+            echo "</div>"; 
+        }
+    }
+    if($akcija=="obrisi"){
+        $id=$_POST['id'];
+        $sql="DELETE FROM knjige WHERE id={$id}";
+        $rez=mysqli_query($db,$sql);
+        if(mysqli_error($db)) echo "Greška!!!!!";
+        else echo "Uspešno obrisan post.";
+    }
+    if($akcija=="dodajKnjigu"){
+        $naslov=$_POST['naslov'];
+        $autor=$_POST['autor'];
+        $broj=$_POST['broj'];
+        $sql="INSERT INTO knjige (idKorisnika, naslov, autor, brojStranica) VALUES ({$_SESSION['id']}, '{$naslov}', '{$autor}', {$broj})";
+        //echo $sql;
+        $rez=mysqli_query($db,$sql);
+        if(mysqli_error($db)) echo "Greška!!!!!";
+        else {
+            Log::upis("Dodavanje nove knjige '{$naslov}' od strane korisnika '{$_SESSION['email']}'");
+            echo "Uspešno dodat post.";
+        }
+    }
+?>
+
+
